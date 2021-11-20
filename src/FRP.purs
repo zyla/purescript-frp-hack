@@ -3,7 +3,7 @@ module FRP where
 import Prelude
 
 import Data.Array as Array
-import Data.Foldable (sequence_, for_)
+import Data.Foldable (for_)
 import Data.Maybe (Maybe(..), fromMaybe)
 import Effect (Effect)
 import Effect.Ref as ERef
@@ -11,56 +11,49 @@ import Effect.Unsafe (unsafePerformEffect)
 import Unsafe.Coerce (unsafeCoerce)
 import Unsafe.Reference (unsafeRefEq)
 
-foreign import data Any :: Type
-
+-- | A constraint used to delimit `Dynamic` computations.
+-- | If `DynContext` is in scope, it means we're defining a `Dynamic`.
 class DynContext
 
+-- | `Dynamic a` represents a computation resulting in a value of type `a`, which can be read or subscribed to.
+-- |
+-- | Since this is just `a` with an additional constrants, `Dynamics` can be composed like ordinary expressions:
+-- |
+-- | ```
+-- | x, y :: Dynamic Int
+-- | x + y :: Dynamic Int
+-- | ```
+-- | 
+-- | However, when defining let-bindings, PureScript fails to generalize over the DynContext constraint,
+-- | so this fails:
+-- |
+-- | ```
+-- | let z = x + y
+-- | ```
+-- |
+-- | However, adding an explicit type signature solved the problem.
+-- | Alternatively the definition can be wrapped in the `dyn` helper, which accomplishes the same thing.
+-- |
+-- | ```
+-- | let z = dyn $ x + y
+-- | ```
 type Dynamic a = DynContext => a
 
-unsafeEval :: forall a. Dynamic a -> Effect a
-unsafeEval = unsafeCoerce
+-- | Read the current value of a `Dynamic`.
+readDynamic :: forall a. Dynamic a -> Effect a
+readDynamic = unsafeEval
 
-dynEffect :: forall a. Effect a -> Dynamic a
-dynEffect = unsafeCoerce
+-- | A helper for defining Dynamics.
+dyn :: forall a. Dynamic a -> Dynamic a
+dyn = identity
 
-currentEvalDeps :: ERef.Ref (Maybe (Array SomeRef))
-currentEvalDeps = unsafePerformEffect $ ERef.new Nothing
-
+-- | A mutable cell which can be read as a Dynamic.
 newtype Ref a = Ref { value :: ERef.Ref a, listeners :: ERef.Ref (Array (Effect Unit)) }
 
 instance Eq (Ref a) where
   eq = unsafeRefEq
 
-type SomeRef = Ref Any
-
-toSomeRef :: forall a. Ref a -> SomeRef
-toSomeRef = unsafeCoerce
-
-refNew :: forall a. a -> Effect (Ref a)
-refNew initialValue = do
-  value <- ERef.new initialValue
-  listeners <- ERef.new []
-  pure $ Ref { value, listeners }
-
-refValue :: forall a. Ref a -> Dynamic a
-refValue ref@(Ref r) = dynEffect do
-  m_deps <- ERef.read currentEvalDeps
-  for_ m_deps \deps ->
-    ERef.write (Just (deps <> [toSomeRef ref])) currentEvalDeps
-  ERef.read r.value
-
-refWrite :: forall a. Ref a -> a -> Effect Unit
-refWrite (Ref r) v = do
-  ERef.write v r.value
-  listeners <- ERef.read r.listeners
-  sequence_ listeners
-
-readDynamic :: forall a. Dynamic a -> Effect a
-readDynamic = unsafeEval
-
-dyn :: forall a. Dynamic a -> Dynamic a
-dyn = identity
-
+-- | Subscribe to changes in the value of a `Dynamic`.
 subscribe :: forall a. Dynamic a -> (a -> Effect Unit) -> Effect (Effect Unit)
 subscribe d handler = do
   depsRef <- ERef.new []
@@ -80,3 +73,21 @@ subscribe d handler = do
         handler value
   eval
   pure unsubscribe
+
+-- internals
+
+foreign import data Any :: Type
+
+type SomeRef = Ref Any
+
+toSomeRef :: forall a. Ref a -> SomeRef
+toSomeRef = unsafeCoerce
+
+unsafeEval :: forall a. Dynamic a -> Effect a
+unsafeEval = unsafeCoerce
+
+dynEffect :: forall a. Effect a -> Dynamic a
+dynEffect = unsafeCoerce
+
+currentEvalDeps :: ERef.Ref (Maybe (Array SomeRef))
+currentEvalDeps = unsafePerformEffect $ ERef.new Nothing

@@ -5,16 +5,17 @@ import Prelude
 import Effect (Effect)
 import Effect.Console (log)
 
-import FRP
+import FRP (dyn, subscribe)
+import FRP.Ref as Ref
 
 main :: Effect Unit
 main = do
-  rx <- refNew 1
-  let x = refValue rx
-  ry <- refNew 2
-  let y = refValue ry
-  rz <- refNew 3
-  let z = refValue rz
+  rx <- Ref.new 1
+  let x = Ref.value rx
+  ry <- Ref.new 2
+  let y = Ref.value ry
+  rz <- Ref.new 3
+  let z = Ref.value rz
 
   let xy = dyn $ x + y
 
@@ -24,8 +25,6 @@ main = do
   _ <- subscribe xy (\v -> log $ "x + y = " <> show v)
   _ <- subscribe (x + y + z) (\v -> log $ "x + y + z = " <> show v)
 
-  refWrite rx 10
-  refWrite ry 20
-  refWrite rz 30
-
-  pure unit
+  Ref.write rx 10
+  Ref.write ry 20
+  Ref.write rz 30
