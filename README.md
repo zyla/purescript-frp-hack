@@ -40,3 +40,16 @@ See the [Broken](./src/Broken.purs) module for a complete example that demonstra
 Reading the above Dynamic gives us a function which can read a Dynamic in a pure context, breaking referential transparency.
 
 This is not surprising, since we're abusing the typeclass mechanism as something like an effect system.
+
+### Can this be fixed?
+
+I believe if we modified the type system to disallow propagation of "effect-like" constraints through lambda abstractions, that would solve the problem.
+However, this would limit expressiveness: there are certain places where we want to use a lambda, for example:
+
+```purescript
+foo :: Dynamic (Array Int) -> Dynamic Int -> Dynamic (Array Int)
+foo xs y = map (\x -> x + y) xs
+```
+
+In this case it's safe to do because the lambda doesn't escape the DynContext scope.
+But tracking this would require somehow annotating this at the type level, and that gets complicated.
